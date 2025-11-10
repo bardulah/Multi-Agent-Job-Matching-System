@@ -2,6 +2,7 @@
 Tests for LLM Clients
 """
 
+import sys
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from llm import create_llm_client, BaseLLMClient, LLMResponse
@@ -25,6 +26,11 @@ def test_create_anthropic_client():
         assert client.provider_name == 'anthropic'
 
 
+@pytest.mark.skipif(
+    not hasattr(sys.modules.get('llm.openai_client', None), 'OPENAI_AVAILABLE')
+    or not getattr(__import__('llm.openai_client', fromlist=['OPENAI_AVAILABLE']), 'OPENAI_AVAILABLE', False),
+    reason="OpenAI not installed (optional dependency)"
+)
 def test_create_openai_client():
     """Test creating OpenAI client."""
     config = {
@@ -33,11 +39,9 @@ def test_create_openai_client():
         'model': 'gpt-4o-mini'
     }
 
-    with patch('llm.openai_client.OPENAI_AVAILABLE', True):
-        with patch('llm.openai_client.openai.OpenAI'):
-            client = create_llm_client(config)
-            assert isinstance(client, OpenAILLMClient)
-            assert client.provider_name == 'openai'
+    client = create_llm_client(config)
+    assert isinstance(client, OpenAILLMClient)
+    assert client.provider_name == 'openai'
 
 
 def test_create_ollama_client():
