@@ -1,311 +1,247 @@
 """
-Job Fetcher Agent
+Job Fetcher Agent with Selenium Support
 
-Scrapes job postings from profesia.sk and filters them based on user preferences.
+Scrapes job postings from profesia.sk using Selenium to bypass anti-bot protection.
 """
 
 import time
-import requests
 from bs4 import BeautifulSoup
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from urllib.parse import urljoin, quote_plus
+from urllib.parse import urljoin
 from loguru import logger
+
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.chrome.options import Options
+    from webdriver_manager.chrome import ChromeDriverManager
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    SELENIUM_AVAILABLE = False
+    logger.warning("Selenium not installed. Install with: pip install selenium webdriver-manager")
 
 
 class JobFetcherAgent:
     """Agent responsible for fetching and filtering job postings from profesia.sk."""
 
     def __init__(self, config: Dict[str, Any]):
-        """
-        Initialize the Job Fetcher Agent.
-
-        Args:
-            config: Configuration dictionary
-        """
+        """Initialize the Job Fetcher Agent."""
         self.config = config
         self.scraping_config = config.get('scraping', {}).get('profesia_sk', {})
         self.base_url = self.scraping_config.get('base_url', 'https://www.profesia.sk')
         self.search_url = self.scraping_config.get('search_url', 'https://www.profesia.sk/praca/')
         self.max_pages = self.scraping_config.get('max_pages', 5)
         self.delay = self.scraping_config.get('delay_between_requests', 2)
-        self.user_agent = config.get('scraping', {}).get('user_agent', 'Mozilla/5.0')
 
-        self.session = requests.Session()
+        self.use_selenium = SELENIUM_AVAILABLE
 
-        # Use more realistic browser headers to avoid 403 blocks
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'sk-SK,sk;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-            'Cache-Control': 'max-age=0',
-            'DNT': '1',
-        })
+        if self.use_selenium:
+            logger.info("🚀 Job Fetcher with Selenium - ANTI-BOT BYPASS ENABLED!")
+        else:
+            logger.warning("⚠️  Selenium not available - install it!")
 
-        logger.info("Job Fetcher Agent initialized")
+    def _get_driver(self):
+        """Create and configure Selenium WebDriver."""
+        options = Options()
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+
+        driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()),
+            options=options
+        )
+
+        # Remove webdriver property
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+
+        return driver
 
     def fetch_jobs(self, keywords: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-        """
-        Fetch job postings from profesia.sk.
-
-        Args:
-            keywords: List of keywords to search for (uses config if None)
-
-        Returns:
-            List of job dictionaries
-        """
+        """Fetch job postings from profesia.sk."""
         if keywords is None:
             keywords = self.config.get('job_preferences', {}).get('keywords', [])
 
         all_jobs = []
-        search_query = ' '.join(keywords[:3])  # Use top 3 keywords
+        search_query = ' '.join(keywords[:3])
 
-        logger.info(f"Starting job search for: {search_query}")
+        logger.info(f"🔍 Searching for: {search_query}")
 
+        if not self.use_selenium:
+            logger.error("❌ Selenium not available - cannot bypass bot protection")
+            return []
+
+        driver = None
         try:
-            for page in range(1, self.max_pages + 1):
-                logger.debug(f"Fetching page {page}/{self.max_pages}")
+            driver = self._get_driver()
+            logger.info("✓ Browser launched")
 
-                jobs = self._fetch_page(search_query, page)
+            for page in range(1, self.max_pages + 1):
+                logger.info(f"📄 Fetching page {page}/{self.max_pages}...")
+
+                jobs = self._fetch_page_selenium(driver, search_query, page)
                 if not jobs:
-                    logger.info(f"No more jobs found at page {page}, stopping")
+                    logger.info(f"No more jobs at page {page}")
                     break
 
                 all_jobs.extend(jobs)
+                logger.info(f"  Found {len(jobs)} jobs on this page")
 
-                # Rate limiting
                 if page < self.max_pages:
                     time.sleep(self.delay)
 
-            logger.info(f"Fetched {len(all_jobs)} jobs total")
+            logger.info(f"✅ Total: {len(all_jobs)} jobs fetched!")
 
-            # Deduplicate by URL
             unique_jobs = {job['url']: job for job in all_jobs}.values()
             return list(unique_jobs)
 
         except Exception as e:
-            logger.error(f"Error fetching jobs: {e}")
+            logger.error(f"❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
             return []
+        finally:
+            if driver:
+                driver.quit()
+                logger.debug("Browser closed")
 
-    def _fetch_page(self, search_query: str, page: int) -> List[Dict[str, Any]]:
-        """
-        Fetch a single page of job listings.
-
-        Args:
-            search_query: Search query string
-            page: Page number
-
-        Returns:
-            List of job dictionaries
-        """
+    def _fetch_page_selenium(self, driver, search_query: str, page: int) -> List[Dict[str, Any]]:
+        """Fetch a single page using Selenium."""
         try:
-            # Construct search URL
-            # Format: https://www.profesia.sk/praca/?search_query=python&page=1
-            params = {
-                'search_query': search_query,
-                'page': page
-            }
+            url = f"{self.search_url}?search_query={search_query}&page={page}"
+            logger.debug(f"Loading: {url}")
 
-            # Build URL
-            url = f"{self.search_url}?search_query={quote_plus(search_query)}&page={page}"
+            driver.get(url)
+            time.sleep(4)  # Wait for page load and JS
 
-            logger.debug(f"Fetching URL: {url}")
-
-            response = self.session.get(url, timeout=10)
-            response.raise_for_status()
-
-            soup = BeautifulSoup(response.content, 'lxml')
+            # Parse with BeautifulSoup
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
             jobs = self._parse_job_listings(soup)
 
             return jobs
 
-        except requests.RequestException as e:
-            logger.error(f"Request error on page {page}: {e}")
-            return []
         except Exception as e:
-            logger.error(f"Error parsing page {page}: {e}")
+            logger.error(f"Error on page {page}: {e}")
             return []
 
     def _parse_job_listings(self, soup: BeautifulSoup) -> List[Dict[str, Any]]:
-        """
-        Parse job listings from the HTML page.
-
-        Args:
-            soup: BeautifulSoup object of the page
-
-        Returns:
-            List of job dictionaries
-        """
+        """Parse job listings from HTML."""
         jobs = []
 
-        # Note: These selectors are examples and may need adjustment based on actual site structure
-        # Profesia.sk structure may vary, so this is a flexible implementation
-
-        # Try multiple possible selectors for job listings
+        # Try multiple selectors
         job_listings = (
-            soup.find_all('article', class_='list-row') or
-            soup.find_all('div', class_='job-item') or
+            soup.find_all('article') or
+            soup.find_all('div', class_='offer') or
             soup.find_all('li', class_='offer') or
-            soup.find_all('div', attrs={'data-jobad': True})
+            soup.find_all('a', href=lambda x: x and '/praca/' in x and len(x) > 10)[:30]
         )
 
-        logger.debug(f"Found {len(job_listings)} job listings on page")
+        logger.debug(f"Found {len(job_listings)} potential listings")
 
         for listing in job_listings:
             try:
                 job = self._parse_single_job(listing)
-                if job:
+                if job and job['title'] and len(job['title']) > 3:
                     jobs.append(job)
             except Exception as e:
-                logger.warning(f"Error parsing job listing: {e}")
+                logger.debug(f"Skip listing: {e}")
                 continue
 
         return jobs
 
     def _parse_single_job(self, listing) -> Optional[Dict[str, Any]]:
-        """
-        Parse a single job listing element.
-
-        Args:
-            listing: BeautifulSoup element containing job listing
-
-        Returns:
-            Job dictionary or None if parsing fails
-        """
+        """Parse a single job listing."""
         try:
-            # Extract job title and URL
-            title_element = (
-                listing.find('a', class_='title') or
-                listing.find('h2', class_='title') or
-                listing.find('a', href=True)
-            )
+            # Get all text and links
+            text = listing.get_text(strip=True)
+            links = listing.find_all('a', href=True)
 
-            if not title_element:
+            if not links:
                 return None
 
-            title = title_element.get_text(strip=True)
-            url = title_element.get('href', '')
+            # Find best link (longest href with /praca/)
+            best_link = max(
+                [l for l in links if '/praca/' in l.get('href', '')],
+                key=lambda x: len(x.get('href', '')),
+                default=None
+            )
 
-            if url and not url.startswith('http'):
+            if not best_link:
+                return None
+
+            url = best_link.get('href', '')
+            if not url.startswith('http'):
                 url = urljoin(self.base_url, url)
 
-            # Extract company
-            company_element = (
-                listing.find('span', class_='employer') or
-                listing.find('div', class_='company') or
-                listing.find('span', class_='company-name')
-            )
-            company = company_element.get_text(strip=True) if company_element else 'Unknown'
+            # Extract title
+            title = best_link.get_text(strip=True) or text[:100]
 
-            # Extract location
-            location_element = (
-                listing.find('span', class_='locality') or
-                listing.find('div', class_='location') or
-                listing.find('span', class_='location')
-            )
-            location = location_element.get_text(strip=True) if location_element else 'Not specified'
+            # Try to extract company and location from surrounding text
+            all_text_elements = listing.find_all(text=True)
+            text_parts = [t.strip() for t in all_text_elements if t.strip()]
 
-            # Extract salary if available
-            salary_element = (
-                listing.find('span', class_='salary') or
-                listing.find('div', class_='salary')
-            )
-            salary = salary_element.get_text(strip=True) if salary_element else None
+            company = 'Unknown'
+            location = 'Not specified'
 
-            # Extract short description
-            description_element = (
-                listing.find('div', class_='description') or
-                listing.find('p', class_='description')
-            )
-            description = description_element.get_text(strip=True) if description_element else ''
-
-            # Extract employment type
-            employment_type = 'full-time'  # Default
-            if description:
-                if 'part-time' in description.lower() or 'čiastočný úväzok' in description.lower():
-                    employment_type = 'part-time'
-                elif 'contract' in description.lower() or 'zmluva' in description.lower():
-                    employment_type = 'contract'
+            # Simple heuristic: company often after title, location has city names
+            if len(text_parts) > 1:
+                company = text_parts[1] if len(text_parts[1]) < 50 else 'Unknown'
+            if len(text_parts) > 2:
+                location = text_parts[2] if len(text_parts[2]) < 30 else 'Not specified'
 
             job = {
                 'title': title,
                 'company': company,
                 'location': location,
                 'url': url,
-                'salary': salary,
-                'description': description,
-                'employment_type': employment_type,
+                'salary': None,
+                'description': text[:200],
+                'employment_type': 'full-time',
                 'fetched_at': datetime.now().isoformat(),
                 'source': 'profesia.sk'
             }
 
-            logger.debug(f"Parsed job: {title} at {company}")
-
             return job
 
         except Exception as e:
-            logger.warning(f"Error parsing job element: {e}")
             return None
 
     def fetch_job_details(self, job_url: str) -> Optional[str]:
-        """
-        Fetch full job description from job detail page.
-
-        Args:
-            job_url: URL of the job posting
-
-        Returns:
-            Full job description or None
-        """
-        try:
-            logger.debug(f"Fetching job details from: {job_url}")
-
-            response = self.session.get(job_url, timeout=10)
-            response.raise_for_status()
-
-            soup = BeautifulSoup(response.content, 'lxml')
-
-            # Find job description (adjust selectors as needed)
-            description_element = (
-                soup.find('div', class_='job-description') or
-                soup.find('div', class_='content') or
-                soup.find('article', class_='offer-description') or
-                soup.find('div', id='job-description')
-            )
-
-            if description_element:
-                # Extract text, preserving some structure
-                description = description_element.get_text(separator='\n', strip=True)
-                return description
-
-            logger.warning(f"Could not find job description on page: {job_url}")
+        """Fetch full job description."""
+        if not self.use_selenium:
             return None
+
+        driver = None
+        try:
+            driver = self._get_driver()
+            driver.get(job_url)
+            time.sleep(3)
+
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+
+            # Get all text from page
+            description = soup.get_text(separator='\n', strip=True)
+
+            return description[:5000]  # Limit size
 
         except Exception as e:
-            logger.error(f"Error fetching job details from {job_url}: {e}")
+            logger.error(f"Error fetching details: {e}")
             return None
+        finally:
+            if driver:
+                driver.quit()
 
     def enrich_jobs_with_details(self, jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Fetch full descriptions for all jobs.
-
-        Args:
-            jobs: List of job dictionaries
-
-        Returns:
-            Jobs with enriched descriptions
-        """
+        """Fetch full descriptions for all jobs."""
         enriched_jobs = []
 
         for i, job in enumerate(jobs, 1):
-            logger.info(f"Enriching job {i}/{len(jobs)}: {job['title']}")
+            logger.info(f"Enriching {i}/{len(jobs)}: {job['title']}")
 
             full_description = self.fetch_job_details(job['url'])
             if full_description:
@@ -315,7 +251,6 @@ class JobFetcherAgent:
 
             enriched_jobs.append(job)
 
-            # Rate limiting
             if i < len(jobs):
                 time.sleep(self.delay)
 
