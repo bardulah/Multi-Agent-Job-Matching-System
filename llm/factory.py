@@ -11,6 +11,7 @@ from .base import BaseLLMClient, LLMConfigError
 from .anthropic_client import AnthropicLLMClient
 from .openai_client import OpenAILLMClient
 from .ollama_client import OllamaLLMClient
+from .gemini_client import GeminiLLMClient
 
 
 def create_llm_client(config: Dict[str, Any]) -> BaseLLMClient:
@@ -52,10 +53,12 @@ def create_llm_client(config: Dict[str, Any]) -> BaseLLMClient:
         return OpenAILLMClient(config)
     elif provider == 'ollama':
         return OllamaLLMClient(config)
+    elif provider == 'gemini':
+        return GeminiLLMClient(config)
     else:
         raise LLMConfigError(
             f"Unsupported LLM provider: {provider}. "
-            f"Supported providers: anthropic, openai, ollama"
+            f"Supported providers: anthropic, openai, ollama, gemini"
         )
 
 
@@ -109,6 +112,20 @@ def get_available_providers() -> Dict[str, Dict[str, Any]]:
             'speed': 'Depends on hardware',
             'quality': 'Good',
             'notes': 'Requires Ollama installed locally'
+        },
+        'gemini': {
+            'name': 'Google Gemini',
+            'models': [
+                'gemini-1.5-flash-002',
+                'gemini-1.5-pro-002',
+                'gemini-2.0-flash-exp',
+                'gemini-1.5-flash-8b',
+            ],
+            'requires_api_key': True,
+            'pricing': 'Very affordable (Flash is 10x cheaper than GPT-4)',
+            'speed': 'Very Fast',
+            'quality': 'Excellent',
+            'notes': 'Great balance of speed, quality, and cost'
         },
     }
 
