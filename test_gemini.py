@@ -4,6 +4,7 @@ Quick test of Gemini integration
 """
 
 import sys
+import os
 import json
 from loguru import logger
 from llm import create_llm_client
@@ -19,10 +20,17 @@ def test_gemini():
     print("🚀 TESTING GEMINI INTEGRATION")
     print("="*80 + "\n")
 
+    # Get API key from environment
+    api_key = os.getenv('GEMINI_API_KEY')
+    if not api_key:
+        print("❌ ERROR: GEMINI_API_KEY environment variable not set!")
+        print("   Set it with: export GEMINI_API_KEY='your-api-key-here'")
+        sys.exit(1)
+
     # Create Gemini client configuration
     config = {
         'provider': 'gemini',
-        'api_key': 'AIzaSyDsOf-eFFQUOgfPWYBl2vHOUW9XFIFpFaE',
+        'api_key': api_key,
         'model': 'gemini-1.5-flash-002',
         'max_tokens': 4000,
         'temperature': 0.7

@@ -4,6 +4,7 @@ Simple test of Gemini integration without making actual API calls
 """
 
 import sys
+import os
 from loguru import logger
 from llm import create_llm_client, GeminiLLMClient
 
@@ -18,11 +19,14 @@ def test_gemini_integration():
     print("🚀 TESTING GEMINI INTEGRATION (INITIALIZATION ONLY)")
     print("="*80 + "\n")
 
+    # Get API key from environment (or use dummy for testing client creation)
+    api_key = os.getenv('GEMINI_API_KEY', 'dummy-key-for-testing-initialization-only')
+
     # Test 1: Factory can create Gemini client
     print("1️⃣  Testing factory creation...")
     config = {
         'provider': 'gemini',
-        'api_key': 'AIzaSyDsOf-eFFQUOgfPWYBl2vHOUW9XFIFpFaE',
+        'api_key': api_key,
         'model': 'gemini-1.5-flash-002',
         'max_tokens': 4000,
         'temperature': 0.7

@@ -1,5 +1,24 @@
 # 🎉 Google Gemini Integration Complete!
 
+## ⚠️ IMPORTANT: API Key Security
+
+**NEVER commit API keys to version control!**
+
+To use Gemini, set your API key as an environment variable:
+
+```bash
+export GEMINI_API_KEY='your-api-key-here'
+```
+
+Or add it to a `.env` file (which is gitignored):
+```bash
+echo "GEMINI_API_KEY=your-api-key-here" >> .env
+```
+
+See `.env.example` for the complete template.
+
+---
+
 ## ✅ What Was Done
 
 Your multi-agent job application system now supports **Google Gemini** as the 4th LLM provider!
@@ -37,7 +56,7 @@ Your multi-agent job application system now supports **Google Gemini** as the 4t
 
 ✅ Token counting works (with fallback approximation)
 ✅ Config file is set to use Gemini
-   📝 API key: ********************W9XFIFpFaE
+   📝 Using environment variable: GEMINI_API_KEY
 ```
 
 ## 🚀 What You Can Do Now
@@ -59,7 +78,7 @@ Edit `config.yaml` and change the model:
 ```yaml
 llm:
   provider: "gemini"
-  api_key: "AIzaSyDsOf-eFFQUOgfPWYBl2vHOUW9XFIFpFaE"
+  api_key_env: "GEMINI_API_KEY"  # Set this environment variable
   model: "gemini-1.5-flash-002"  # Change this!
 ```
 
