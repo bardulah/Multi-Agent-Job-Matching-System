@@ -9,34 +9,34 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 from docx import Document
 from loguru import logger
-import anthropic
+
+from llm import create_llm_client, BaseLLMClient
 
 
 class CritiqueAgent:
     """Agent responsible for critiquing and improving CVs."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], llm_client: Optional[BaseLLMClient] = None):
         """
         Initialize the Critique Agent.
 
         Args:
             config: Configuration dictionary
+            llm_client: Optional pre-configured LLM client (for testing/DI)
         """
         self.config = config
         self.llm_config = config.get('llm', {})
 
-        # Initialize LLM client
-        self.llm_provider = self.llm_config.get('provider', 'anthropic')
-        if self.llm_provider == 'anthropic':
-            api_key = self.llm_config.get('api_key')
-            if not api_key:
-                raise ValueError("Anthropic API key not found in configuration")
-            self.client = anthropic.Anthropic(api_key=api_key)
-            self.model = self.llm_config.get('model', 'claude-sonnet-4-5-20250929')
+        # Initialize LLM client (model-agnostic)
+        if llm_client:
+            self.llm_client = llm_client
         else:
-            raise ValueError(f"Unsupported LLM provider: {self.llm_provider}")
+            self.llm_client = create_llm_client(self.llm_config)
 
-        logger.info("Critique Agent initialized")
+        logger.info(
+            f"Critique Agent initialized with {self.llm_client.provider_name} "
+            f"({self.llm_client.model})"
+        )
 
     def critique_cv(
         self,
@@ -220,25 +220,12 @@ Be constructive and specific. The CV will be sent to the employer if the overall
 """
 
         try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=3000,
+            # Use model-agnostic LLM client
+            critique = self.llm_client.generate_json(
+                prompt=prompt,
                 temperature=0.3,
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }]
+                max_tokens=3000
             )
-
-            content = response.content[0].text
-
-            # Parse JSON response
-            if '```json' in content:
-                content = content.split('```json')[1].split('```')[0]
-            elif '```' in content:
-                content = content.split('```')[1].split('```')[0]
-
-            critique = json.loads(content.strip())
 
             # Calculate overall score if not provided
             if 'overall_score' not in critique:
@@ -365,20 +352,12 @@ Format as JSON:
 }}
 """
 
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=1000,
+            # Use model-agnostic LLM client
+            return self.llm_client.generate_json(
+                prompt=prompt,
                 temperature=0.3,
-                messages=[{"role": "user", "content": prompt}]
+                max_tokens=1000
             )
-
-            content = response.content[0].text
-            if '```json' in content:
-                content = content.split('```json')[1].split('```')[0]
-            elif '```' in content:
-                content = content.split('```')[1].split('```')[0]
-
-            return json.loads(content.strip())
 
         except Exception as e:
             logger.error(f"Error comparing CVs: {e}")

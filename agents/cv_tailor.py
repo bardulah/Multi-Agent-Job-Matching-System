@@ -12,18 +12,20 @@ from datetime import datetime
 from docx import Document
 from docx.shared import Pt, RGBColor
 from loguru import logger
-import anthropic
+
+from llm import create_llm_client, BaseLLMClient
 
 
 class CVTailorAgent:
     """Agent responsible for tailoring CVs to match job requirements."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], llm_client: Optional[BaseLLMClient] = None):
         """
         Initialize the CV Tailor Agent.
 
         Args:
             config: Configuration dictionary
+            llm_client: Optional pre-configured LLM client (for testing/DI)
         """
         self.config = config
         self.cv_config = config.get('cv', {})
@@ -31,22 +33,20 @@ class CVTailorAgent:
         self.user_info = config.get('user', {})
         self.skills = config.get('skills', {})
 
-        # Initialize LLM client
-        self.llm_provider = self.llm_config.get('provider', 'anthropic')
-        if self.llm_provider == 'anthropic':
-            api_key = self.llm_config.get('api_key')
-            if not api_key:
-                raise ValueError("Anthropic API key not found in configuration")
-            self.client = anthropic.Anthropic(api_key=api_key)
-            self.model = self.llm_config.get('model', 'claude-sonnet-4-5-20250929')
+        # Initialize LLM client (model-agnostic)
+        if llm_client:
+            self.llm_client = llm_client
         else:
-            raise ValueError(f"Unsupported LLM provider: {self.llm_provider}")
+            self.llm_client = create_llm_client(self.llm_config)
 
         # Ensure output directory exists
         self.output_dir = Path("data/cvs")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info("CV Tailor Agent initialized")
+        logger.info(
+            f"CV Tailor Agent initialized with {self.llm_client.provider_name} "
+            f"({self.llm_client.model})"
+        )
 
     def tailor_cv(self, job: Dict[str, Any], base_cv_data: Optional[Dict] = None) -> Dict[str, Any]:
         """
@@ -159,27 +159,12 @@ Format your response as JSON with these keys:
 """
 
         try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=2000,
+            # Use model-agnostic LLM client
+            analysis = self.llm_client.generate_json(
+                prompt=prompt,
                 temperature=0.3,
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }]
+                max_tokens=2000
             )
-
-            # Extract content
-            content = response.content[0].text
-
-            # Try to parse JSON from response
-            # The LLM might wrap it in markdown code blocks
-            if '```json' in content:
-                content = content.split('```json')[1].split('```')[0]
-            elif '```' in content:
-                content = content.split('```')[1].split('```')[0]
-
-            analysis = json.loads(content.strip())
 
             return analysis
 
@@ -245,25 +230,12 @@ Make it specific to this role at {job['company']}. Use keywords from the job pos
 """
 
         try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=2000,
+            # Use model-agnostic LLM client
+            tailored_content = self.llm_client.generate_json(
+                prompt=prompt,
                 temperature=0.7,
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }]
+                max_tokens=2000
             )
-
-            content = response.content[0].text
-
-            # Parse JSON
-            if '```json' in content:
-                content = content.split('```json')[1].split('```')[0]
-            elif '```' in content:
-                content = content.split('```')[1].split('```')[0]
-
-            tailored_content = json.loads(content.strip())
 
             # Merge with base CV data
             cv_data = base_cv_data.copy()
