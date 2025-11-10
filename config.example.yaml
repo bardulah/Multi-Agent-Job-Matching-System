@@ -1,0 +1,124 @@
+# Multi-Agent Job Application System Configuration
+
+# User Profile
+user:
+  name: "Your Name"
+  email: "your.email@example.com"
+  phone: "+421 XXX XXX XXX"
+  linkedin: "https://linkedin.com/in/yourprofile"
+  github: "https://github.com/yourusername"
+
+# Job Search Preferences
+job_preferences:
+  keywords:
+    - "Python"
+    - "Machine Learning"
+    - "Data Science"
+    - "Backend Developer"
+    - "Software Engineer"
+
+  excluded_keywords:
+    - "Senior Manager"
+    - "Director"
+
+  locations:
+    - "Bratislava"
+    - "Remote"
+    - "Košice"
+
+  employment_types:
+    - "full-time"
+    - "contract"
+
+  min_salary: null  # Optional, in EUR
+  experience_level:
+    - "junior"
+    - "medior"
+    - "senior"
+
+# User Skills (used for job matching and CV tailoring)
+skills:
+  programming_languages:
+    - "Python"
+    - "JavaScript"
+    - "SQL"
+    - "TypeScript"
+
+  frameworks:
+    - "Django"
+    - "FastAPI"
+    - "React"
+    - "Flask"
+
+  tools:
+    - "Docker"
+    - "Git"
+    - "PostgreSQL"
+    - "Redis"
+    - "AWS"
+
+  soft_skills:
+    - "Team collaboration"
+    - "Problem solving"
+    - "Communication"
+    - "Agile methodologies"
+
+# CV Configuration
+cv:
+  template_path: "templates/cv_template.docx"
+  output_format: "docx"  # docx or pdf
+  sections:
+    - "personal_info"
+    - "summary"
+    - "experience"
+    - "education"
+    - "skills"
+    - "projects"
+
+# LLM Configuration (for CV tailoring and critique)
+llm:
+  provider: "anthropic"  # anthropic, openai, etc.
+  api_key_env: "ANTHROPIC_API_KEY"  # Environment variable name
+  model: "claude-sonnet-4-5-20250929"
+  max_tokens: 4000
+  temperature: 0.7
+
+# Email Notification Settings
+email:
+  smtp_server: "smtp.gmail.com"
+  smtp_port: 587
+  use_tls: true
+  sender_email_env: "EMAIL_ADDRESS"  # Environment variable
+  sender_password_env: "EMAIL_PASSWORD"  # Environment variable or app password
+  recipient_email: "your.email@example.com"  # Where to send daily reports
+
+# Scraping Configuration
+scraping:
+  profesia_sk:
+    base_url: "https://www.profesia.sk"
+    search_url: "https://www.profesia.sk/praca/"
+    max_pages: 5
+    delay_between_requests: 2  # seconds
+
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+# System Settings
+system:
+  max_jobs_per_day: 10  # Maximum jobs to process daily
+  min_match_score: 0.6  # Minimum matching score (0-1) to process a job
+  enable_auto_send: false  # If true, automatically send emails; if false, save for review
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  data_retention_days: 90  # Keep job history for N days
+
+# Optional: Cloud Storage (commented out by default)
+# cloud_storage:
+#   enabled: false
+#   provider: "google_drive"  # google_drive, dropbox
+#   credentials_path: "config/cloud_credentials.json"
+#   folder_id: "your-folder-id"
+
+# Optional: Web Dashboard
+# dashboard:
+#   enabled: false
+#   host: "0.0.0.0"
+#   port: 8000
