@@ -122,6 +122,9 @@ class NotificationAgent:
             cv = result['cv']
             critique = result['critique']
 
+            # Handle both CV agent types (Approach 1 has cv_data + file_path, Approach 3 has cv_path)
+            cv_file_path = cv.get('cv_path') or cv.get('file_path')
+
             job_summary = {
                 'title': job['title'],
                 'company': job['company'],
@@ -129,7 +132,7 @@ class NotificationAgent:
                 'url': job['url'],
                 'salary': job.get('salary'),
                 'match_score': result.get('match_score', 0),
-                'cv_path': cv['file_path'],
+                'cv_path': cv_file_path,
                 'critique_score': critique['overall_score'],
                 'key_strengths': critique.get('strengths', [])[:3],
                 'suggestions': critique.get('suggestions', [])[:3]
@@ -169,8 +172,10 @@ class NotificationAgent:
 
             # Attach CVs
             for result in approved_jobs:
-                cv_path = result['cv']['file_path']
-                self._attach_file(msg, cv_path)
+                # Handle both CV agent types
+                cv_path = result['cv'].get('cv_path') or result['cv'].get('file_path')
+                if cv_path:
+                    self._attach_file(msg, cv_path)
 
             # Send email
             with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
@@ -242,7 +247,9 @@ class NotificationAgent:
                     f.write(f"   URL: {job['url']}\n")
                     f.write(f"   Match Score: {result.get('match_score', 0):.2f}\n")
                     f.write(f"   Critique Score: {critique['overall_score']:.1f}/10\n")
-                    f.write(f"   CV: {cv['file_path']}\n")
+                    # Handle both CV agent types
+                    cv_file_path = cv.get('cv_path') or cv.get('file_path')
+                    f.write(f"   CV: {cv_file_path}\n")
                     f.write("\n")
 
             logger.info(f"Results saved to: {review_dir}")
