@@ -115,9 +115,9 @@ class CVTailorAgent:
             },
             'summary': '',  # Will be generated per job
             'skills': self.skills,
-            'experience': [],  # Should be loaded from template or config
-            'education': [],   # Should be loaded from template or config
-            'projects': [],    # Should be loaded from template or config
+            'experience': self.config.get('experience', []),
+            'education': self.config.get('education', []),
+            'projects': self.config.get('projects', []),
         }
 
     def _analyze_job_requirements(self, job: Dict[str, Any]) -> Dict[str, Any]:
@@ -199,6 +199,8 @@ Format your response as JSON with these keys:
         logger.debug("Generating tailored CV content")
 
         user_skills_str = json.dumps(self.skills, indent=2)
+        experience_str = json.dumps(base_cv_data.get('experience', []), indent=2)
+        projects_str = json.dumps(base_cv_data.get('projects', []), indent=2)
 
         prompt = f"""You are a professional CV writer. Tailor this CV for the specific job posting.
 
@@ -206,27 +208,43 @@ Job Title: {job['title']}
 Company: {job['company']}
 Job Requirements: {json.dumps(job_analysis, indent=2)}
 
-User's Skills and Background:
+User's Skills:
 {user_skills_str}
+
+User's Experience:
+{experience_str}
+
+User's Projects:
+{projects_str}
 
 User's Info:
 Name: {base_cv_data['personal_info']['name']}
 Email: {base_cv_data['personal_info']['email']}
 
 Task:
-1. Write a compelling professional summary (3-4 sentences) that highlights relevant experience and skills for THIS specific job
-2. List 6-8 most relevant skills that match the job requirements (prioritize technical skills mentioned in the job)
-3. Suggest 2-3 key achievements or experiences to emphasize (can be hypothetical but realistic based on the skills)
+1. Write a compelling professional summary (3-4 sentences) that highlights relevant experience and skills for THIS specific job. Use concrete numbers and metrics where possible.
+2. List 6-8 most relevant skills that match the job requirements (prioritize technical skills mentioned in the job).
+3. Rewrite the "description" bullet points for each experience entry to emphasize relevance to the job. Keep them truthful but highlight matching technologies/methodologies.
+4. Suggest 2-3 key achievements or experiences to emphasize (can be hypothetical but realistic based on the skills).
 
 Format as JSON:
 {{
     "professional_summary": "...",
     "key_skills": ["skill1", "skill2", ...],
+    "tailored_experience": [
+        {{
+            "company": "Company Name",
+            "title": "Job Title",
+            "period": "Date Range",
+            "description": ["bullet 1", "bullet 2", ...]
+        }},
+        ...
+    ],
     "key_achievements": ["achievement1", "achievement2", ...],
     "keywords_to_emphasize": ["keyword1", "keyword2", ...]
 }}
 
-Make it specific to this role at {job['company']}. Use keywords from the job posting naturally.
+Make it specific to this role at {job['company']}. Use keywords from the job posting naturally. Do NOT use generic buzzwords. Be concise and impact-oriented.
 """
 
         try:
@@ -234,7 +252,7 @@ Make it specific to this role at {job['company']}. Use keywords from the job pos
             tailored_content = self.llm_client.generate_json(
                 prompt=prompt,
                 temperature=0.7,
-                max_tokens=2000
+                max_tokens=3000
             )
 
             # Merge with base CV data
@@ -243,6 +261,10 @@ Make it specific to this role at {job['company']}. Use keywords from the job pos
             cv_data['key_skills'] = tailored_content.get('key_skills', [])
             cv_data['key_achievements'] = tailored_content.get('key_achievements', [])
             cv_data['keywords'] = tailored_content.get('keywords_to_emphasize', [])
+            
+            # Update experience with tailored descriptions if available
+            if tailored_content.get('tailored_experience'):
+                cv_data['experience'] = tailored_content.get('tailored_experience')
 
             return cv_data
 
@@ -296,10 +318,42 @@ Make it specific to this role at {job['company']}. Use keywords from the job pos
         key_skills = cv_data.get('key_skills', [])
         skills_para.add_run(' • '.join(key_skills))
 
-        # Add experience section (placeholder)
+        # Add experience section
         doc.add_heading('Professional Experience', level=2)
-        for achievement in cv_data.get('key_achievements', []):
-            doc.add_paragraph(achievement, style='List Bullet')
+        for exp in cv_data.get('experience', []):
+            title_line = doc.add_paragraph()
+            title_line.add_run(f"{exp.get('title')}").bold = True
+            title_line.add_run(f" | {exp.get('company')}").italic = True
+            title_line.add_run(f" | {exp.get('period')}")
+            
+            for bullet in exp.get('description', []):
+                doc.add_paragraph(bullet, style='List Bullet')
+
+        # Add education section
+        doc.add_heading('Education', level=2)
+        for edu in cv_data.get('education', []):
+            edu_line = doc.add_paragraph()
+            edu_line.add_run(f"{edu.get('degree')}").bold = True
+            edu_line.add_run(f" | {edu.get('institution')}").italic = True
+            edu_line.add_run(f" | {edu.get('period')}")
+
+        # Add projects section
+        if cv_data.get('projects'):
+            doc.add_heading('Key Projects', level=2)
+            for proj in cv_data.get('projects', []):
+                proj_line = doc.add_paragraph()
+                proj_line.add_run(f"{proj.get('name')}").bold = True
+                if proj.get('technologies'):
+                    techs = ", ".join(proj.get('technologies'))
+                    proj_line.add_run(f" ({techs})").italic = True
+                
+                doc.add_paragraph(proj.get('description', ''), style='Normal')
+
+        # Add key achievements (as extra highlights)
+        if cv_data.get('key_achievements'):
+            doc.add_heading('Key Achievements', level=2)
+            for achievement in cv_data.get('key_achievements', []):
+                doc.add_paragraph(achievement, style='List Bullet')
 
         # Add technical skills breakdown
         doc.add_heading('Technical Skills', level=2)

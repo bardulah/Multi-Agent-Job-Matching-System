@@ -34,6 +34,7 @@ class NotificationAgent:
         self.use_tls = self.email_config.get('use_tls', True)
         self.sender_email = self.email_config.get('sender_email')
         self.sender_password = self.email_config.get('sender_password')
+        self.smtp_user = self.email_config.get('smtp_user', self.sender_email)
         self.recipient_email = self.email_config.get('recipient_email', self.sender_email)
 
         self.enable_auto_send = self.system_config.get('enable_auto_send', False)
@@ -177,7 +178,7 @@ class NotificationAgent:
                     server.starttls()
 
                 if self.sender_password:
-                    server.login(self.sender_email, self.sender_password)
+                    server.login(self.smtp_user, self.sender_password)
 
                 server.send_message(msg)
 
@@ -390,7 +391,7 @@ class NotificationAgent:
                     server.starttls()
 
                 if self.sender_password:
-                    server.login(self.sender_email, self.sender_password)
+                    server.login(self.smtp_user, self.sender_password)
 
                 server.send_message(msg)
 

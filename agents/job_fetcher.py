@@ -113,7 +113,7 @@ class JobFetcherAgent:
     def _fetch_page_selenium(self, driver, search_query: str, page: int) -> List[Dict[str, Any]]:
         """Fetch a single page using Selenium."""
         try:
-            url = f"{self.search_url}?search_query={search_query}&page={page}"
+            url = f"{self.search_url}?search_anywhere={search_query}&page={page}"
             logger.debug(f"Loading: {url}")
 
             driver.get(url)
@@ -135,6 +135,7 @@ class JobFetcherAgent:
 
         # Try multiple selectors
         job_listings = (
+            soup.find_all('li', class_='list-row') or
             soup.find_all('article') or
             soup.find_all('div', class_='offer') or
             soup.find_all('li', class_='offer') or
@@ -165,8 +166,16 @@ class JobFetcherAgent:
                 return None
 
             # Find best link (longest href with /praca/)
+            # Exclude login/redirect links which might be longer
+            valid_links = [
+                l for l in links 
+                if '/praca/' in l.get('href', '') 
+                and 'login' not in l.get('href', '')
+                and 'redirect' not in l.get('href', '')
+            ]
+
             best_link = max(
-                [l for l in links if '/praca/' in l.get('href', '')],
+                valid_links,
                 key=lambda x: len(x.get('href', '')),
                 default=None
             )
@@ -177,6 +186,8 @@ class JobFetcherAgent:
             url = best_link.get('href', '')
             if not url.startswith('http'):
                 url = urljoin(self.base_url, url)
+
+            logger.debug(f"Parsed job URL: {url}")
 
             # Extract title
             title = best_link.get_text(strip=True) or text[:100]

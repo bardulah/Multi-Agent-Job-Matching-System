@@ -67,6 +67,10 @@ class ConfigLoader:
                 env_var = self.config['email']['sender_password_env']
                 self.config['email']['sender_password'] = os.getenv(env_var)
 
+            if 'smtp_user_env' in self.config['email']:
+                env_var = self.config['email']['smtp_user_env']
+                self.config['email']['smtp_user'] = os.getenv(env_var)
+
     def _validate_config(self):
         """Validate required configuration fields."""
         required_sections = ['user', 'job_preferences', 'skills', 'llm', 'email']

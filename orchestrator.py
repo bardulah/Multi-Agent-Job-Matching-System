@@ -15,6 +15,7 @@ from utils.job_matcher import JobMatcher
 from utils.history_manager import HistoryManager
 from agents.job_fetcher import JobFetcherAgent
 from agents.cv_tailor import CVTailorAgent
+from agents.cv_template_tailor import CVTemplateTailorAgent
 from agents.critique import CritiqueAgent
 from agents.notification import NotificationAgent
 
@@ -49,7 +50,16 @@ class JobApplicationOrchestrator:
 
         # Initialize agents
         self.job_fetcher = JobFetcherAgent(self.config.config)
-        self.cv_tailor = CVTailorAgent(self.config.config)
+
+        # Choose CV tailoring approach
+        use_template = self.config.get('cv.use_template', False)
+        if use_template:
+            logger.info("📋 Using Approach 3: Template-based CV (your actual CV + customization)")
+            self.cv_tailor = CVTemplateTailorAgent(self.config.config)
+        else:
+            logger.info("✏️  Using Approach 1: Generated CV from config data")
+            self.cv_tailor = CVTailorAgent(self.config.config)
+
         self.critique_agent = CritiqueAgent(self.config.config)
         self.notification_agent = NotificationAgent(self.config.config)
 
@@ -214,9 +224,13 @@ class JobApplicationOrchestrator:
 
                 # Critique CV
                 logger.info("  → Critiquing CV...")
+                # Handle both template-based and generated CVs
+                cv_data = cv_result.get('cv_data', {})  # Generated CVs
+                file_path = cv_result.get('cv_path') or cv_result.get('file_path')  # Both types
+
                 critique_result = self.critique_agent.critique_cv(
-                    cv_result['cv_data'],
-                    cv_result['file_path'],
+                    cv_data,
+                    file_path,
                     job
                 )
 
@@ -224,10 +238,12 @@ class JobApplicationOrchestrator:
                 status = 'approved' if critique_result['passes'] else 'rejected'
 
                 # Add to history
+                # Handle both template-based and generated CVs (different key names)
+                cv_path = cv_result.get('cv_path') or cv_result.get('file_path')
                 self.history_manager.add_job(
                     job,
                     job['match_score'],
-                    cv_result['file_path'],
+                    cv_path,
                     critique_result,
                     status=status
                 )
