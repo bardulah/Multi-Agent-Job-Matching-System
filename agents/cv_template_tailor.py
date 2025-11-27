@@ -279,8 +279,12 @@ Be specific about which CV sections and skills actually appear in their CV."""
         """
         Create a customized version of your CV.
 
-        Approach 3 preserves your authentic voice while creating a job-specific version.
-        This creates a text-based customized CV with a cover note showing tailoring.
+        Approach 3: Creates a modified PDF with a customization header showing:
+        - Job you applied for
+        - Your matching skills
+        - Why you're a good fit
+
+        This adds context directly to the CV so recruiter sees the tailoring.
 
         Args:
             cv_content: Your CV text
@@ -288,7 +292,7 @@ Be specific about which CV sections and skills actually appear in their CV."""
             suggestions: LLM suggestions for emphasis
 
         Returns:
-            Path to output CV file (PDF copy with job-specific naming)
+            Path to output CV file (customized PDF)
         """
         # Generate unique filename
         job_url = job.get('url', '')
@@ -302,24 +306,130 @@ Be specific about which CV sections and skills actually appear in their CV."""
         filename = f"CV_{company_name}_{date}_{job_identifier}.pdf"
         output_path = self.output_dir / filename
 
-        # Copy your CV with job-specific name
-        # Note: PDF copying preserves formatting. Customization is in the covering note
-        # (stored separately but sent with CV to show tailoring)
-        shutil.copy(self.base_cv_path, output_path)
-
-        # Create customization note file (text format showing how CV was tailored)
-        note_filename = f"TAILORING_NOTE_{company_name}_{date}_{job_identifier}.txt"
-        note_path = self.output_dir / note_filename
-
-        customization_note = self._create_customization_note(job, suggestions, cv_content)
-        with open(note_path, 'w', encoding='utf-8') as f:
-            f.write(customization_note)
+        # Create customized PDF with header showing job-specific tailoring
+        self._create_customized_pdf(
+            self.base_cv_path,
+            output_path,
+            job,
+            suggestions,
+            cv_content
+        )
 
         logger.info(f"Created customized CV: {output_path}")
-        logger.info(f"Created tailoring note: {note_path}")
         logger.info(f"Emphasis suggestions: {suggestions.get('summary', '')}")
 
         return output_path
+
+    def _create_customized_pdf(
+        self,
+        source_pdf_path: str,
+        output_pdf_path: str,
+        job: Dict[str, Any],
+        suggestions: Dict[str, Any],
+        cv_content: str
+    ) -> None:
+        """
+        Create a customized PDF by prepending a job-specific page to your CV.
+
+        The new first page shows:
+        - Job title and company applied for
+        - Your matching skills
+        - Why you're a good fit for THIS specific job
+
+        Args:
+            source_pdf_path: Path to original CV PDF
+            output_pdf_path: Path to save customized CV
+            job: Job posting details
+            suggestions: LLM customization suggestions
+            cv_content: Your CV text content
+        """
+        try:
+            from PyPDF2 import PdfWriter, PdfReader
+            from reportlab.pdfgen import canvas
+            from reportlab.lib.pagesizes import letter
+            from io import BytesIO
+
+            # Create a new PDF with customization header
+            buffer = BytesIO()
+            c = canvas.Canvas(buffer, pagesize=letter)
+
+            # Title
+            c.setFont("Helvetica-Bold", 14)
+            c.drawString(50, 750, "APPLICATION CUSTOMIZATION")
+            c.setFont("Helvetica", 10)
+            c.drawString(50, 730, "-" * 100)
+
+            # Job details
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(50, 710, f"Position: {job.get('title', 'N/A')}")
+            c.drawString(50, 690, f"Company: {job.get('company', 'N/A')}")
+            c.drawString(50, 670, f"Location: {job.get('location', 'N/A')}")
+
+            # Your match
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(50, 645, "Your Matching Skills:")
+            c.setFont("Helvetica", 10)
+            y_pos = 625
+            for skill in suggestions.get('skills_match', [])[:5]:
+                c.drawString(70, y_pos, f"• {skill}")
+                y_pos -= 15
+
+            # Why you fit
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(50, y_pos - 10, "Why You Fit:")
+            c.setFont("Helvetica", 10)
+
+            # Wrap the summary text
+            summary = suggestions.get('summary', 'Qualified candidate')
+            words = summary.split()
+            line = ""
+            y_pos -= 35
+            for word in words:
+                if len(line) + len(word) + 1 > 100:
+                    c.drawString(70, y_pos, line)
+                    y_pos -= 15
+                    line = word
+                else:
+                    line += word + " " if line else word
+
+            if line:
+                c.drawString(70, y_pos, line)
+
+            c.drawString(50, 50, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+
+            c.save()
+
+            # Combine: customization header + original CV
+            buffer.seek(0)
+            header_pdf = PdfReader(buffer)
+
+            # Read original CV
+            original_pdf = PdfReader(self.base_cv_path)
+
+            # Create output PDF
+            writer = PdfWriter()
+
+            # Add customization header as first page
+            writer.add_page(header_pdf.pages[0])
+
+            # Add all pages from original CV
+            for page in original_pdf.pages:
+                writer.add_page(page)
+
+            # Write to file
+            with open(output_pdf_path, 'wb') as f:
+                writer.write(f)
+
+            logger.info(f"Customized PDF created with {len(original_pdf.pages) + 1} pages")
+
+        except ImportError:
+            # Fallback: if ReportLab not available, just copy original
+            logger.warning("ReportLab not available, copying original CV without customization header")
+            shutil.copy(self.base_cv_path, output_pdf_path)
+        except Exception as e:
+            logger.error(f"Error creating customized PDF: {e}")
+            # Fallback: copy original
+            shutil.copy(self.base_cv_path, output_pdf_path)
 
     def _create_customization_note(
         self,
