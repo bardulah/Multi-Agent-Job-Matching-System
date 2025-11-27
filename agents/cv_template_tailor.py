@@ -277,13 +277,19 @@ Return JSON with:
         Returns:
             Path to output CV file
         """
-        # Generate filename
-        job_id = job.get('url', '').split('/')[-1][:20]
-        company_name = job.get('company', 'Unknown')[:20]
+        # Generate unique filename
+        # Use job URL to create unique identifier
+        job_url = job.get('url', '')
+        # Extract job ID from URL (usually the numeric/alphanumeric part)
+        url_parts = job_url.split('/')
+        job_identifier = url_parts[-1] if url_parts else 'job'
+
+        # Clean identifiers for filename
+        company_name = job.get('company', 'Unknown').replace(' ', '_')[:15]
         date = datetime.now().strftime('%Y%m%d')
 
-        # Create filename that's both human and searchable
-        filename = f"CV_{company_name}_{date}.pdf"
+        # Create unique filename: CV_Company_Date_JobID.pdf
+        filename = f"CV_{company_name}_{date}_{job_identifier}.pdf"
         output_path = self.output_dir / filename
 
         # Copy your CV with job-specific name
