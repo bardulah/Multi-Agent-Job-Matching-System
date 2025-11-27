@@ -17,6 +17,7 @@ from agents.job_fetcher import JobFetcherAgent
 from agents.cv_tailor import CVTailorAgent
 from agents.cv_template_tailor import CVTemplateTailorAgent
 from agents.critique import CritiqueAgent
+from agents.motivation_letter import MotivationLetterAgent
 from agents.notification import NotificationAgent
 
 
@@ -61,6 +62,7 @@ class JobApplicationOrchestrator:
             self.cv_tailor = CVTailorAgent(self.config.config)
 
         self.critique_agent = CritiqueAgent(self.config.config)
+        self.motivation_agent = MotivationLetterAgent(self.config.config)
         self.notification_agent = NotificationAgent(self.config.config)
 
         # System settings
@@ -234,6 +236,19 @@ class JobApplicationOrchestrator:
                     job
                 )
 
+                # Generate motivation letter
+                logger.info("  → Generating motivation letter...")
+                try:
+                    motivation_letter = self.motivation_agent.generate_letter(
+                        job,
+                        cv_data.get('cv_content', ''),  # Use cv_content if available
+                        cv_result.get('emphasis', {}) if isinstance(cv_result.get('emphasis'), dict) else {'summary': 'Qualified candidate'}
+                    )
+                    motivation_path = self.motivation_agent.save_letter(motivation_letter, job)
+                except Exception as e:
+                    logger.warning(f"Failed to generate motivation letter: {e}")
+                    motivation_path = None
+
                 # Determine status
                 status = 'approved' if critique_result['passes'] else 'rejected'
 
@@ -252,6 +267,7 @@ class JobApplicationOrchestrator:
                     'job': job,
                     'cv': cv_result,
                     'critique': critique_result,
+                    'motivation_letter': motivation_path,
                     'match_score': job['match_score'],
                     'status': status
                 }

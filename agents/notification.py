@@ -170,12 +170,17 @@ class NotificationAgent:
             body = self._create_email_body(summary)
             msg.attach(MIMEText(body, 'html'))
 
-            # Attach CVs
+            # Attach CVs and motivation letters
             for result in approved_jobs:
                 # Handle both CV agent types
                 cv_path = result['cv'].get('cv_path') or result['cv'].get('file_path')
                 if cv_path:
                     self._attach_file(msg, cv_path)
+
+                # Attach motivation letter if generated
+                motivation_path = result.get('motivation_letter')
+                if motivation_path:
+                    self._attach_file(msg, motivation_path)
 
             # Send email
             with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
@@ -189,11 +194,20 @@ class NotificationAgent:
 
             logger.info("Email notification sent successfully")
 
+            # Count total attachments (CVs + motivation letters)
+            attachments_count = 0
+            for result in approved_jobs:
+                if result['cv'].get('cv_path') or result['cv'].get('file_path'):
+                    attachments_count += 1
+                if result.get('motivation_letter'):
+                    attachments_count += 1
+
             return {
                 'sent': True,
                 'method': 'email',
                 'recipient': self.recipient_email,
-                'attachments_count': len(approved_jobs)
+                'attachments_count': attachments_count,
+                'jobs_processed': len(approved_jobs)
             }
 
         except Exception as e:
