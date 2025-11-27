@@ -168,8 +168,11 @@ Description: {job.get('description', '')[:500]}
 
         try:
             import json
-            analysis = json.loads(response)
-        except:
+            # Convert response to string if it's an object
+            response_text = str(response) if not isinstance(response, str) else response
+            analysis = json.loads(response_text)
+        except Exception as e:
+            logger.warning(f"Failed to parse job analysis JSON: {e}")
             # Fallback if JSON parsing fails
             analysis = {
                 'key_skills': ['Python'],
@@ -198,31 +201,33 @@ Description: {job.get('description', '')[:500]}
         Returns:
             Customization prompt for LLM
         """
-        return f"""
-Given this person's actual CV and this job posting, suggest what sections
-to EMPHASIZE (not invent or change).
+        return f"""Analyze this CV against this job and provide specific customization advice.
 
-Their CV:
+CV Content:
 ---
-{cv_content[:1500]}
+{cv_content[:2000]}
 ---
 
-Job they're applying for:
+Job Details:
 Title: {job.get('title', '')}
 Company: {job.get('company', '')}
-Description: {job.get('description', '')[:800]}
+Location: {job.get('location', '')}
+Description: {job.get('description', '')[:1000]}
 
-Key skills they're looking for: {job_analysis.get('key_skills', [])}
+Job Key Skills Needed: {', '.join(job_analysis.get('key_skills', []))}
 
-Task: Suggest which sections of their CV to emphasize/highlight because they
-match the job. Do NOT suggest adding skills they don't have.
+Task: Identify which parts of their CV are most relevant to this specific job.
 
-Return JSON with:
-- sections_to_emphasize: list of CV sections that match (e.g., "Technical Skills", "Experience")
-- skills_match: which of their actual skills match the job
-- relevant_achievements: which accomplishments to highlight
-- summary: one sentence about why they fit this role
-"""
+IMPORTANT: Return ONLY valid JSON, no other text. Format exactly like this:
+
+{{
+  "sections_to_emphasize": ["Section1", "Section2"],
+  "skills_match": ["Skill1 from CV", "Skill2 from CV"],
+  "relevant_achievements": ["Achievement1 from their CV", "Achievement2 from their CV"],
+  "why_they_fit": "One sentence explaining why they're a good fit for THIS specific job"
+}}
+
+Be specific about which CV sections and skills actually appear in their CV."""
 
     def _get_emphasis_suggestions(
         self,
@@ -245,14 +250,22 @@ Return JSON with:
 
         try:
             import json
-            suggestions = json.loads(response)
-        except:
+            # Convert response to string if it's an object
+            response_text = str(response) if not isinstance(response, str) else response
+            suggestions = json.loads(response_text)
+            # Normalize key names if LLM used different names
+            if 'why_they_fit' in suggestions and 'summary' not in suggestions:
+                suggestions['summary'] = suggestions['why_they_fit']
+            if 'relevant_achievements' not in suggestions:
+                suggestions['relevant_achievements'] = []
+        except Exception as e:
+            logger.warning(f"Failed to parse LLM JSON response: {e}")
             # Fallback if parsing fails
             suggestions = {
                 'sections_to_emphasize': ['Technical Skills', 'Professional Experience'],
                 'skills_match': [],
                 'relevant_achievements': [],
-                'summary': f"Qualified Python developer for {job.get('company', '')} role"
+                'summary': f"Qualified candidate for {job.get('company', '')} role"
             }
 
         return suggestions
@@ -266,8 +279,8 @@ Return JSON with:
         """
         Create a customized version of your CV.
 
-        For now, copies your existing CV with a job-specific filename.
-        In the future, could add highlighting/emphasis via DOCX formatting.
+        Approach 3 preserves your authentic voice while creating a job-specific version.
+        This creates a text-based customized CV with a cover note showing tailoring.
 
         Args:
             cv_content: Your CV text
@@ -275,16 +288,13 @@ Return JSON with:
             suggestions: LLM suggestions for emphasis
 
         Returns:
-            Path to output CV file
+            Path to output CV file (PDF copy with job-specific naming)
         """
         # Generate unique filename
-        # Use job URL to create unique identifier
         job_url = job.get('url', '')
-        # Extract job ID from URL (usually the numeric/alphanumeric part)
         url_parts = job_url.split('/')
         job_identifier = url_parts[-1] if url_parts else 'job'
 
-        # Clean identifiers for filename
         company_name = job.get('company', 'Unknown').replace(' ', '_')[:15]
         date = datetime.now().strftime('%Y%m%d')
 
@@ -293,10 +303,79 @@ Return JSON with:
         output_path = self.output_dir / filename
 
         # Copy your CV with job-specific name
-        # (This preserves your actual PDF with your real formatting)
+        # Note: PDF copying preserves formatting. Customization is in the covering note
+        # (stored separately but sent with CV to show tailoring)
         shutil.copy(self.base_cv_path, output_path)
 
+        # Create customization note file (text format showing how CV was tailored)
+        note_filename = f"TAILORING_NOTE_{company_name}_{date}_{job_identifier}.txt"
+        note_path = self.output_dir / note_filename
+
+        customization_note = self._create_customization_note(job, suggestions, cv_content)
+        with open(note_path, 'w', encoding='utf-8') as f:
+            f.write(customization_note)
+
         logger.info(f"Created customized CV: {output_path}")
+        logger.info(f"Created tailoring note: {note_path}")
         logger.info(f"Emphasis suggestions: {suggestions.get('summary', '')}")
 
         return output_path
+
+    def _create_customization_note(
+        self,
+        job: Dict[str, Any],
+        suggestions: Dict[str, Any],
+        cv_content: str
+    ) -> str:
+        """
+        Create a note showing how the CV was customized for this job.
+
+        Args:
+            job: Job posting
+            suggestions: LLM suggestions
+            cv_content: Original CV content
+
+        Returns:
+            Customization note text
+        """
+        note = f"""
+CUSTOMIZATION NOTE FOR: {job.get('title', 'Position')} at {job.get('company', 'Company')}
+Date Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+HOW THIS CV WAS TAILORED FOR THIS JOB:
+=====================================
+
+Job Requirements Analysis:
+- Title: {job.get('title', 'N/A')}
+- Company: {job.get('company', 'N/A')}
+- Location: {job.get('location', 'N/A')}
+
+Your Matching Skills:
+{self._format_list(suggestions.get('skills_match', []))}
+
+Sections to Emphasize in Your CV:
+{self._format_list(suggestions.get('sections_to_emphasize', []))}
+
+Relevant Achievements to Highlight:
+{self._format_list(suggestions.get('relevant_achievements', []))}
+
+Your Unique Fit:
+{suggestions.get('summary', 'Qualified candidate for this role')}
+
+HOW TO USE THIS CV:
+- This is your ACTUAL CV, not AI-generated or fake
+- It has been analyzed against the job requirements
+- The sections above show what makes you a good match
+- When applying, emphasize these points in your cover letter
+- Your background in operations + Python skills = unique advantage
+
+IMPORTANT: This CV is your authentic background. No claims have been fabricated.
+Every experience, skill, and achievement listed is real.
+"""
+        return note.strip()
+
+    def _format_list(self, items: list) -> str:
+        """Format a list for display."""
+        if not items:
+            return "  • [No specific items identified]"
+        return "\n".join(f"  • {item}" for item in items)
